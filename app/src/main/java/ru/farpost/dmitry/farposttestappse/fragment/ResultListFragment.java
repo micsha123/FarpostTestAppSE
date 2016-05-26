@@ -22,6 +22,7 @@ import ru.farpost.dmitry.farposttestappse.R;
 import ru.farpost.dmitry.farposttestappse.adapter.RecyclerViewAdapter;
 import ru.farpost.dmitry.farposttestappse.api.GitHubRepos;
 import ru.farpost.dmitry.farposttestappse.model.Response;
+import ru.farpost.dmitry.farposttestappse.utils.EndlessRecyclerOnScrollListener;
 
 public class ResultListFragment extends Fragment {
 
@@ -29,9 +30,7 @@ public class ResultListFragment extends Fragment {
     private Call<Response> callResponse;
     private RecyclerViewAdapter adapter;
     private Response responseGithub;
-
-    private boolean loading = true;
-    int pastVisiblesItems, visibleItemCount, totalItemCount;
+    private EndlessRecyclerOnScrollListener mEndlessRecyclerOnScrollListener;
 
     public ResultListFragment() {
     }
@@ -58,28 +57,15 @@ public class ResultListFragment extends Fragment {
         gitHubRepos = retrofit.create(GitHubRepos.class);
 
         adapter = new RecyclerViewAdapter(getActivity());
-        recyclerView.addOnScrollListener(new RecyclerView.OnScrollListener() {
+        mEndlessRecyclerOnScrollListener = new EndlessRecyclerOnScrollListener(linearLayoutManager) {
             @Override
-            public void onScrolled(RecyclerView recyclerView, int dx, int dy)
-            {
-                if (dy > 0)
-                {
-                    visibleItemCount = linearLayoutManager.getChildCount();
-                    totalItemCount = linearLayoutManager.getItemCount();
-                    pastVisiblesItems = linearLayoutManager.findFirstVisibleItemPosition();
-
-                    if (loading)
-                    {
-                        if ( (visibleItemCount + pastVisiblesItems) >= totalItemCount)
-                        {
-                            loading = false;
-                            adapter.setCount(adapter.getCount() + 10);
-                            adapter.notifyDataSetChanged();
-                        }
-                    }
-                }
+            public void onLoadMore(int current_page) {
+                adapter.setCount(adapter.getCount() + 10);
+                adapter.notifyDataSetChanged();
             }
-        });
+        };
+
+        recyclerView.addOnScrollListener(mEndlessRecyclerOnScrollListener);
         recyclerView.setAdapter(adapter);
 
         return rootView;
@@ -142,6 +128,7 @@ public class ResultListFragment extends Fragment {
 
     private void showDataOnScreen(Response response){
         adapter.setCount(10);
+        mEndlessRecyclerOnScrollListener.reset(0, true);
         adapter.setResponse(response);
         adapter.notifyDataSetChanged();
     }
