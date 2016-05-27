@@ -8,31 +8,23 @@ import android.view.ViewGroup;
 import android.widget.ImageView;
 import android.widget.TextView;
 
+import com.akiniyalocts.pagingrecycler.PagingAdapter;
 import com.squareup.picasso.Picasso;
 
-import ru.farpost.dmitry.farposttestappse.R;
-import ru.farpost.dmitry.farposttestappse.model.Response;
+import java.util.ArrayList;
 
-public class RecyclerViewAdapter extends RecyclerView.Adapter<RecyclerViewAdapter.ViewHolder> {
+import ru.farpost.dmitry.farposttestappse.R;
+import ru.farpost.dmitry.farposttestappse.model.Repository;
+
+public class RecyclerViewAdapter extends PagingAdapter {
+
 
     private Context context;
-    private Response response;
-    private int count = 10;
+    private ArrayList<Repository> items;
 
-    public RecyclerViewAdapter(Context context) {
+    public RecyclerViewAdapter(Context context, ArrayList<Repository> items) {
         this.context = context;
-    }
-
-    public void setResponse(Response response) {
-        this.response = response;
-    }
-
-    public int getCount() {
-        return count;
-    }
-
-    public void setCount(int count) {
-        this.count = count;
+        this.items = items;
     }
 
     @Override
@@ -43,27 +35,26 @@ public class RecyclerViewAdapter extends RecyclerView.Adapter<RecyclerViewAdapte
     }
 
     @Override
-    public void onBindViewHolder(ViewHolder holder, int position) {
-        Picasso.with(context).load(response.items.get(position).owner.avatar_url).into(holder.image);
-        holder.name.setText(response.items.get(position).full_name);
-        holder.description.setText(response.items.get(position).description);
+    public void onBindViewHolder(RecyclerView.ViewHolder holder, int position) {
+        ViewHolder viewHolder = (ViewHolder) holder;
+        Picasso.with(context).load(items.get(position).owner.avatar_url).into(viewHolder.image);
+        viewHolder.name.setText(items.get(position).full_name);
+        viewHolder.description.setText(items.get(position).description);
+    }
+
+    @Override
+    public int getPagingLayout() {
+        return R.layout.item_recycler;
+    }
+
+    @Override
+    public int getPagingItemCount() {
+        return items.size();
     }
 
     @Override
     public int getItemCount() {
-//        if (response != null){
-//            return response.items.size();
-//        }
-//        return 0;
-        if (response != null){
-            if (response.items.size() < count){
-                return response.items.size();
-            } else {
-                return count;
-            }
-        } else{
-            return 0;
-        }
+        return items.size();
     }
 
     public static class ViewHolder extends RecyclerView.ViewHolder{

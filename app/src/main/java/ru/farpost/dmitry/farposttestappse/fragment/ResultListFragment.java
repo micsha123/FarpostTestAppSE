@@ -2,10 +2,12 @@ package ru.farpost.dmitry.farposttestappse.fragment;
 
 import android.os.Bundle;
 import android.support.v4.app.Fragment;
+import android.support.v7.widget.DefaultItemAnimator;
 import android.support.v7.widget.LinearLayoutManager;
 import android.support.v7.widget.RecyclerView;
 import android.support.v7.widget.SearchView;
 import android.text.TextUtils;
+import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.Menu;
 import android.view.MenuInflater;
@@ -13,27 +15,33 @@ import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
 
-import retrofit2.Call;
-import retrofit2.Callback;
-import retrofit2.Retrofit;
-import retrofit2.converter.gson.GsonConverterFactory;
-import ru.farpost.dmitry.farposttestappse.Constants;
+import com.akiniyalocts.pagingrecycler.PagingDelegate;
+
+import org.greenrobot.eventbus.EventBus;
+import org.greenrobot.eventbus.Subscribe;
+import org.greenrobot.eventbus.ThreadMode;
+
+import java.util.ArrayList;
+
+import fr.castorflex.android.circularprogressbar.CircularProgressBar;
 import ru.farpost.dmitry.farposttestappse.R;
 import ru.farpost.dmitry.farposttestappse.adapter.RecyclerViewAdapter;
-import ru.farpost.dmitry.farposttestappse.api.GitHubRepos;
-import ru.farpost.dmitry.farposttestappse.model.Response;
-import ru.farpost.dmitry.farposttestappse.utils.EndlessRecyclerOnScrollListener;
+import ru.farpost.dmitry.farposttestappse.model.EventResult;
+import ru.farpost.dmitry.farposttestappse.model.Repository;
+import ru.farpost.dmitry.farposttestappse.service.RetrofitDataGetter;
 
-public class ResultListFragment extends Fragment {
+public class ResultListFragment extends Fragment implements PagingDelegate.OnPageListener {
 
-    private GitHubRepos gitHubRepos;
-    private Call<Response> callResponse;
     private RecyclerViewAdapter adapter;
-    private Response responseGithub;
-    private EndlessRecyclerOnScrollListener mEndlessRecyclerOnScrollListener;
+    private SearchView searchView;
+    private CircularProgressBar progressbar;
+    private ArrayList<Repository> items;
+    private ArrayList<Repository> itemsForShowing;
+    private RetrofitDataGetter dataGetter;
 
-    public ResultListFragment() {
-    }
+    private int visibleThreshold = 9;
+    private int lastLoadedPos = 0;
+    private CharSequence searchInput;
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -46,26 +54,27 @@ public class ResultListFragment extends Fragment {
                              Bundle savedInstanceState) {
         View rootView = inflater.inflate(R.layout.fragment_resultlist, container, false);
 
+        progressbar = (CircularProgressBar) rootView.findViewById(R.id.progressbar);
+
+        dataGetter = RetrofitDataGetter.getInstance();
+
         RecyclerView recyclerView = (RecyclerView) rootView.findViewById(R.id.recycler_view);
         final LinearLayoutManager linearLayoutManager = new LinearLayoutManager(getActivity());
+        linearLayoutManager.setOrientation(LinearLayoutManager.VERTICAL);
         recyclerView.setLayoutManager(linearLayoutManager);
 
-        Retrofit retrofit = new Retrofit.Builder()
-                .baseUrl(Constants.API_URL)
-                .addConverterFactory(GsonConverterFactory.create())
+        items = new ArrayList<>();
+        itemsForShowing = new ArrayList<>();
+
+        adapter = new RecyclerViewAdapter(getActivity(), itemsForShowing);
+
+        recyclerView.setItemAnimator(new DefaultItemAnimator());
+
+        PagingDelegate pagingDelegate = new PagingDelegate.Builder(adapter)
+                .attachTo(recyclerView)
+                .listenWith(this)
                 .build();
-        gitHubRepos = retrofit.create(GitHubRepos.class);
 
-        adapter = new RecyclerViewAdapter(getActivity());
-        mEndlessRecyclerOnScrollListener = new EndlessRecyclerOnScrollListener(linearLayoutManager) {
-            @Override
-            public void onLoadMore(int current_page) {
-                adapter.setCount(adapter.getCount() + 10);
-                adapter.notifyDataSetChanged();
-            }
-        };
-
-        recyclerView.addOnScrollListener(mEndlessRecyclerOnScrollListener);
         recyclerView.setAdapter(adapter);
 
         return rootView;
@@ -77,7 +86,10 @@ public class ResultListFragment extends Fragment {
 
         MenuItem searchItem = menu.findItem(R.id.action_search);
 
-        SearchView searchView = (SearchView) searchItem.getActionView();
+        searchView = (SearchView) searchItem.getActionView();
+        if(searchInput != null && searchInput.length() > 0){
+            searchView.setQuery(searchInput, false);
+        }
         searchView.setOnQueryTextListener(new SearchView.OnQueryTextListener() {
             @Override
             public boolean onQueryTextSubmit(String query) {
@@ -87,16 +99,15 @@ public class ResultListFragment extends Fragment {
             @Override
             public boolean onQueryTextChange(String newText) {
                 if (TextUtils.isEmpty(newText)) {
+                    itemsForShowing.clear();
+                    adapter.notifyDataSetChanged();
                 } else {
-                    if(callResponse != null && callResponse.isExecuted()){
-                        callResponse.cancel();
-                    }
-                    loadDataFromGitHub(newText);
+                    dataGetter.getItems(newText);
+                    progressbar.setVisibility(View.VISIBLE);
                 }
                 return true;
             }
         });
-
         super.onCreateOptionsMenu(menu, inflater);
     }
 
@@ -109,41 +120,70 @@ public class ResultListFragment extends Fragment {
         return super.onOptionsItemSelected(item);
     }
 
-    private void loadDataFromGitHub(String keyword){
-        callResponse = gitHubRepos.getRepos(keyword);
-
-        callResponse.enqueue(new Callback<Response>() {
-            @Override
-            public void onResponse(Call<Response> call, retrofit2.Response<Response> response) {
-                if (response.body() != null) {
-                    responseGithub = response.body();
-                    showDataOnScreen(responseGithub);
-                }
-            }
-            @Override
-            public void onFailure(Call<Response> call, Throwable t) {
-            }
-        });
-    }
-
-    private void showDataOnScreen(Response response){
-        adapter.setCount(10);
-        mEndlessRecyclerOnScrollListener.reset(0, true);
-        adapter.setResponse(response);
-        adapter.notifyDataSetChanged();
-    }
     @Override
     public void onActivityCreated(Bundle savedInstanceState) {
         super.onActivityCreated(savedInstanceState);
         if (savedInstanceState != null) {
-            responseGithub = (Response) savedInstanceState.getParcelable("response");
-            adapter.setResponse(responseGithub);
+            ArrayList<Repository> arrayList = savedInstanceState.getParcelableArrayList("items");
+            lastLoadedPos = savedInstanceState.getInt("lastLoadedPos");
+            searchInput = savedInstanceState.getCharSequence("search");
+            int a = savedInstanceState.getInt("progress");
+            progressbar.setVisibility(savedInstanceState.getInt("progress") > 0 ? View.GONE : View.VISIBLE);
+            items.addAll(arrayList);
+            itemsForShowing.addAll(items.subList(0, lastLoadedPos));
+            adapter.notifyDataSetChanged();
         }
     }
 
     @Override
     public void onSaveInstanceState(Bundle outState) {
         super.onSaveInstanceState(outState);
-            outState.putParcelable("response", responseGithub);
+        outState.putParcelableArrayList("items", items);
+        outState.putCharSequence("search", searchView.getQuery());
+        outState.putInt("lastLoadedPos", lastLoadedPos);
+        outState.putInt("progress", progressbar.getVisibility());
+    }
+
+    @Override
+    public void onPause() {
+        super.onPause();
+        EventBus.getDefault().unregister(this);
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        EventBus.getDefault().register(this);
+    }
+
+    @Subscribe(threadMode = ThreadMode.MAIN)
+    public void onEvent(EventResult eventResult) {
+        items = eventResult.getItems();
+        if(items.size() < visibleThreshold){
+            lastLoadedPos = items.size() - 1;
+        } else {
+            lastLoadedPos = visibleThreshold;
+        }
+        itemsForShowing.clear();
+        itemsForShowing.addAll(items.subList(0, lastLoadedPos));
+        progressbar.setVisibility(View.GONE);
+        adapter.notifyDataSetChanged();
+    }
+
+    @Override
+    public void onPage(int i) {
+        if (i + visibleThreshold <= items.size()){
+            itemsForShowing.addAll(items.subList(i, i + visibleThreshold));
+            lastLoadedPos = i + visibleThreshold;
+        } else {
+            itemsForShowing.clear();
+            itemsForShowing.addAll(items);
+            lastLoadedPos = items.size() - 1;
+        }
+        adapter.notifyDataSetChanged();
+    }
+
+    @Override
+    public void onDonePaging() {
     }
 }
