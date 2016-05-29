@@ -7,7 +7,6 @@ import android.support.v7.widget.LinearLayoutManager;
 import android.support.v7.widget.RecyclerView;
 import android.support.v7.widget.SearchView;
 import android.text.TextUtils;
-import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.Menu;
 import android.view.MenuInflater;
@@ -98,10 +97,9 @@ public class ResultListFragment extends Fragment implements PagingDelegate.OnPag
 
             @Override
             public boolean onQueryTextChange(String newText) {
-                if (TextUtils.isEmpty(newText)) {
-                    itemsForShowing.clear();
-                    adapter.notifyDataSetChanged();
-                } else {
+                itemsForShowing.clear();
+                adapter.notifyDataSetChanged();
+                if (!TextUtils.isEmpty(newText)) {
                     dataGetter.getItems(newText);
                     progressbar.setVisibility(View.VISIBLE);
                 }
